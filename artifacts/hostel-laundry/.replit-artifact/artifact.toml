@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Hostel Laundry"
+description = "A mobile-first hostel laundry booking and supervision app for students and managers. Students book weekend laundry slots, receive fair supervision duties, and verify check-ins and handovers with QR codes."
+version = "1.0.0"
+id = "artifacts/hostel-laundry"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18438
+
+[services.development]
+run = "pnpm --filter @workspace/hostel-laundry run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/hostel-laundry", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/hostel-laundry/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18438"
+BASE_PATH = "/"

@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Hostel laundry booking and duty verification API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: laundry
+    description: Student laundry booking and supervision operations
+  - name: management
+    description: Hostel manager operations
 paths:
   /healthz:
     get:
@@ -24,6 +28,189 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /laundry/me:
+    get:
+      operationId: getLaundryMe
+      tags: [laundry]
+      summary: Get the signed-in student's profile
+      responses:
+        "200":
+          description: Current student
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentProfile"
+    patch:
+      operationId: updateLaundryMe
+      tags: [laundry]
+      summary: Update the signed-in student's name and room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentProfileInput"
+      responses:
+        "200":
+          description: Updated student profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentProfile"
+  /laundry/dashboard:
+    get:
+      operationId: getLaundryDashboard
+      tags: [laundry]
+      summary: Get student dashboard overview
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /laundry/slots:
+    get:
+      operationId: getLaundrySlots
+      tags: [laundry]
+      summary: List available half-hour laundry slots
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Availability for the requested date
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LaundrySlot"
+  /laundry/bookings:
+    get:
+      operationId: getLaundryBookings
+      tags: [laundry]
+      summary: List the signed-in student's bookings
+      responses:
+        "200":
+          description: Student bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LaundryBooking"
+    post:
+      operationId: createLaundryBooking
+      tags: [laundry]
+      summary: Book an available laundry slot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaundryBookingInput"
+      responses:
+        "201":
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaundryBooking"
+  /laundry/bookings/{bookingId}:
+    delete:
+      operationId: cancelLaundryBooking
+      tags: [laundry]
+      summary: Cancel a future booking
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Booking cancelled
+  /laundry/duties:
+    get:
+      operationId: getLaundryDuties
+      tags: [laundry]
+      summary: List the signed-in student's duty assignments
+      responses:
+        "200":
+          description: Student duty assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DutyAssignment"
+  /laundry/qr-codes:
+    get:
+      operationId: getLaundryQrCodes
+      tags: [laundry]
+      summary: List active booking and duty QR codes
+      responses:
+        "200":
+          description: Active QR tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QrCredential"
+  /laundry/check-ins:
+    post:
+      operationId: verifyLaundryQr
+      tags: [laundry]
+      summary: Verify a booking or duty QR token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QrVerificationInput"
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QrVerificationResult"
+  /laundry/handovers:
+    post:
+      operationId: completeLaundryHandover
+      tags: [laundry]
+      summary: Confirm a verified supervisor handover
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HandoverInput"
+      responses:
+        "200":
+          description: Updated duty handover
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DutyAssignment"
+  /management/overview:
+    get:
+      operationId: getManagementOverview
+      tags: [management]
+      summary: Get laundry room management overview
+      responses:
+        "200":
+          description: Manager dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagementOverview"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +220,121 @@ components:
           type: string
       required:
         - status
+    StudentProfile:
+      type: object
+      required: [id, name, room, role, dutiesCompleted, dutiesOutstanding]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        room: { type: string }
+        role: { type: string, enum: [student, manager] }
+        dutiesCompleted: { type: integer }
+        dutiesOutstanding: { type: integer }
+    StudentProfileInput:
+      type: object
+      required: [name, room]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        room: { type: string, minLength: 1, maxLength: 40 }
+    DashboardSummary:
+      type: object
+      required: [student, nextBooking, nextDuty, weekendBookings, weekendDuties]
+      properties:
+        student: { $ref: "#/components/schemas/StudentProfile" }
+        nextBooking:
+          anyOf:
+            - $ref: "#/components/schemas/LaundryBooking"
+            - type: "null"
+        nextDuty:
+          anyOf:
+            - $ref: "#/components/schemas/DutyAssignment"
+            - type: "null"
+        weekendBookings: { type: integer }
+        weekendDuties: { type: integer }
+    LaundrySlot:
+      type: object
+      required: [startAt, endAt, available, machineId, machineName]
+      properties:
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        available: { type: boolean }
+        machineId: { type: integer }
+        machineName: { type: string }
+    LaundryBooking:
+      type: object
+      required: [id, startAt, endAt, machineId, machineName, status]
+      properties:
+        id: { type: integer }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        machineId: { type: integer }
+        machineName: { type: string }
+        status: { type: string, enum: [upcoming, active, completed, cancelled] }
+    LaundryBookingInput:
+      type: object
+      required: [startAt, machineId]
+      properties:
+        startAt: { type: string, format: date-time }
+        machineId: { type: integer }
+    DutyAssignment:
+      type: object
+      required: [id, startAt, endAt, status, partnerName, room]
+      properties:
+        id: { type: integer }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        status: { type: string, enum: [upcoming, active, completed, missed] }
+        partnerName: { type: string }
+        room: { type: string }
+        incomingConfirmed: { type: boolean }
+        outgoingConfirmed: { type: boolean }
+    QrCredential:
+      type: object
+      required: [id, kind, token, label, startAt, endAt, status]
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [booking, duty] }
+        token: { type: string }
+        label: { type: string }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        status: { type: string, enum: [upcoming, active, completed] }
+    QrVerificationInput:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 8 }
+    QrVerificationResult:
+      type: object
+      required: [valid, message, kind]
+      properties:
+        valid: { type: boolean }
+        message: { type: string }
+        kind: { type: string, enum: [booking, duty] }
+        relatedId: { type: ["integer", "null"] }
+    HandoverInput:
+      type: object
+      required: [dutyId, partnerToken]
+      properties:
+        dutyId: { type: integer }
+        partnerToken: { type: string, minLength: 8 }
+    ManagementOverview:
+      type: object
+      required: [students, activeBookings, completedDuties, pendingHandovers, weekendCoverage]
+      properties:
+        students: { type: integer }
+        activeBookings: { type: integer }
+        completedDuties: { type: integer }
+        pendingHandovers: { type: integer }
+        weekendCoverage:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShiftCoverage"
+    ShiftCoverage:
+      type: object
+      required: [startAt, assigned, required]
+      properties:
+        startAt: { type: string, format: date-time }
+        assigned: { type: integer }
+        required: { type: integer }
 
