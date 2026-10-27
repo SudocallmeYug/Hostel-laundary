@@ -13,6 +13,7 @@ const apiTarget = process.env.VITE_API_URL || 'http://localhost:5001';
 
 export default defineConfig({
   base: basePath,
+  envDir: path.resolve(import.meta.dirname, '../..'),
   plugins: [
     react(),
     tailwindcss(),

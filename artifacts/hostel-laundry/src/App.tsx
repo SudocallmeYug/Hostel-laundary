@@ -31,7 +31,8 @@ import { Link, Redirect, Route, Switch, Router as WouterRouter, useLocation } fr
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+const defaultClerkKey = 'pk_test_c3VwZXItZmxlYS01OTQzLmNsZXJrLmFjY291bnRzLmRldiQ';
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || defaultClerkKey;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const stripBase = (path: string) => basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path;
 const clerkAppearance = {
