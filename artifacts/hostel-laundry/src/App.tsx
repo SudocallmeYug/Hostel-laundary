@@ -554,8 +554,15 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
 
     try {
       const cleanRoll = loginRoll.trim().toLowerCase();
-      const res = await clerk.client.signIn.create({
+
+      // Step 1: Identify the user by roll number (username)
+      const signInAttempt = await clerk.client.signIn.create({
         identifier: cleanRoll,
+      });
+
+      // Step 2: Submit the password as first factor
+      const res = await signInAttempt.attemptFirstFactor({
+        strategy: 'password',
         password: loginPass,
       });
 
@@ -563,6 +570,7 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
         await clerk.setActive({ session: res.createdSessionId });
         setLocation('/user-portal');
       } else {
+        console.error('Unexpected sign-in status:', res.status, res);
         setLoginError('Sign in could not be completed. Please check your credentials.');
       }
     } catch (err: any) {
