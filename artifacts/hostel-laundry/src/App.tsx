@@ -13,8 +13,8 @@ import {
   Activity, AlertCircle, ArrowDownLeft, ArrowLeft, ArrowRight, BadgeCheck, CalendarDays, Camera, CameraOff,
   Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Copy,
   DoorOpen, Droplets, ExternalLink, Eye, EyeOff, Gauge, Hash, House, KeyRound, LoaderCircle, LogOut,
-  Mail, Menu, ScanLine, ShieldCheck, Shirt, Sparkles, TicketCheck, UserRound, Users,
-  WashingMachine, X,
+  Mail, Menu, Pencil, ScanLine, Settings, ShieldCheck, Shirt, Sparkles, TicketCheck, Trash2, UserRound, Users,
+  WashingMachine, X, Zap,
 } from 'lucide-react';
 
 import {
@@ -165,8 +165,11 @@ function Home() {
 
 function HomeRedirect() {
   const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
   if (!isLoaded) return <div className="auth-loading"><Loading label="Preparing your space"/></div>;
-  return isSignedIn ? <Redirect to="/user-portal"/> : <Home/>;
+  if (!isSignedIn) return <Home/>;
+  const role = (user?.publicMetadata as any)?.role;
+  return role === 'admin' ? <Redirect to="/admin"/> : <Redirect to="/user-portal"/>;
 }
 function Protected({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -518,6 +521,15 @@ function ManagerPage() {
 
 function StudentRoute({ page }: { page: ReactNode }) {
   return <Protected>{page}</Protected>;
+}
+function AdminRoute({ page }: { page: ReactNode }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  if (!isLoaded) return <div className="auth-loading"><Loading label="Checking admin access"/></div>;
+  if (!isSignedIn) return <Redirect to="/"/>;
+  const role = (user?.publicMetadata as any)?.role;
+  if (role !== 'admin') return <Redirect to="/user-portal"/>;
+  return <>{page}</>;
 }
 function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 'register' }) {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
@@ -997,11 +1009,293 @@ function SignInPage() {
 function SignUpPage() {
   return <CustomAuthPage initialMode="register" />;
 }
+
+// ─── Admin Page ──────────────────────────────────────────────────────────────
+const API = import.meta.env.VITE_API_BASE_URL || '';
+async function adminFetch(token: string, path: string, options?: RequestInit) {
+  const r = await fetch(`${API}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options?.headers ?? {}) },
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.json();
+}
+
+function AdminPage() {
+  const { getToken } = useAuth();
+  const { signOut } = useClerk();
+  const [tab, setTab] = useState<'overview'|'students'|'bookings'|'machines'|'duties'>('overview');
+  const [data, setData] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [editStudent, setEditStudent] = useState<any>(null);
+  const [newMachineName, setNewMachineName] = useState('');
+  const [toast, setToast] = useState('');
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  async function load(section: string) {
+    setLoading(true); setError('');
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      const result = await adminFetch(token, `/api/admin/${section}`);
+      setData(prev => ({ ...prev, [section]: result }));
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  async function action(method: string, path: string, body?: any) {
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      await adminFetch(token, path, { method, body: body ? JSON.stringify(body) : undefined });
+      showToast('Done ✓');
+      // reload relevant section
+      const section = path.split('/')[3];
+      if (section) load(section);
+    } catch (e: any) { setError(e.message); }
+  }
+
+  useEffect(() => { load(tab === 'overview' ? 'overview' : tab); }, [tab]);
+
+  const adminTabs = [
+    { id: 'overview', label: 'Overview', icon: Gauge },
+    { id: 'students', label: 'Students', icon: Users },
+    { id: 'bookings', label: 'Bookings', icon: CalendarDays },
+    { id: 'machines', label: 'Machines', icon: WashingMachine },
+    { id: 'duties', label: 'Duties', icon: ShieldCheck },
+  ] as const;
+
+  const fmt2 = (d: string) => d ? new Date(d).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const statusColor = (s: string) => s === 'completed' ? '#287765' : s === 'cancelled' ? '#bb5149' : '#b08a5a';
+
+  return (
+    <div className="admin-page-root">
+      {/* Sidebar */}
+      <aside className="admin-sidebar">
+        <div className="admin-brand">
+          <span className="brand-mark"><Droplets size={18}/></span>
+          <span>WASH<span className="brand-light">ROOM</span><small>ADMIN PANEL</small></span>
+        </div>
+        <nav className="admin-nav">
+          {adminTabs.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => setTab(id as any)} className={`admin-nav-link ${tab === id ? 'admin-nav-active' : ''}`}>
+              <Icon size={17}/><span>{label}</span>{tab === id && <span className="nav-dot"/>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <div className="mini-status"><span className="live-dot"/><span>Admin session active</span></div>
+          <button onClick={() => signOut({ redirectUrl: basePath || '/' })} className="logout-link focus-ring"><LogOut size={15}/> Sign out</button>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div className="admin-main">
+        <header className="admin-topbar">
+          <div className="admin-topbar-title"><Zap size={16} className="admin-zap"/> WASHROOM Admin</div>
+          <div className="admin-mobile-tabs">
+            {adminTabs.map(({ id, label }) => (
+              <button key={id} onClick={() => setTab(id as any)} className={`admin-tab-btn ${tab === id ? 'admin-tab-active' : ''}`}>{label}</button>
+            ))}
+          </div>
+        </header>
+
+        <main className="admin-content">
+          {error && <div className="admin-error"><AlertCircle size={16}/> {error}</div>}
+          {loading && <div className="admin-loading"><LoaderCircle size={20} className="spin"/> Loading…</div>}
+
+          {/* OVERVIEW */}
+          {tab === 'overview' && data.overview && (
+            <div>
+              <div className="title-row"><div><div className="eyebrow">COMMAND CENTER</div><h1 className="display page-title">Overview</h1></div></div>
+              <div className="admin-stats-grid">
+                {[
+                  { label: 'Total Students', value: data.overview.totalStudents, icon: Users, color: '#287765' },
+                  { label: 'Total Bookings', value: data.overview.totalBookings, icon: CalendarDays, color: '#4a90d9' },
+                  { label: 'Active Now', value: data.overview.activeBookings, icon: Activity, color: '#b08a5a' },
+                  { label: 'Completed', value: data.overview.completedBookings, icon: CheckCircle2, color: '#287765' },
+                  { label: 'Machines', value: data.overview.totalMachines, icon: WashingMachine, color: '#6b5fd4' },
+                  { label: 'Pending Handovers', value: data.overview.pendingHandovers, icon: AlertCircle, color: '#bb5149' },
+                ].map(({ label, value, icon: Icon, color }) => (
+                  <div key={label} className="admin-stat-card">
+                    <div className="admin-stat-icon" style={{ color }}><Icon size={22}/></div>
+                    <div className="admin-stat-value">{value}</div>
+                    <div className="admin-stat-label">{label}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="admin-actions-row">
+                <button className="button button-primary" onClick={() => action('POST', '/api/admin/schedule')}><Zap size={15}/> Generate next weekend schedule</button>
+                <button className="button button-outline" onClick={() => load('overview')}><Activity size={15}/> Refresh</button>
+              </div>
+            </div>
+          )}
+
+          {/* STUDENTS */}
+          {tab === 'students' && (
+            <div>
+              <div className="title-row"><div><div className="eyebrow">REGISTERED USERS</div><h1 className="display page-title">Students</h1></div></div>
+              {editStudent && (
+                <div className="admin-modal-backdrop" onClick={() => setEditStudent(null)}>
+                  <div className="admin-modal" onClick={e => e.stopPropagation()}>
+                    <div className="admin-modal-title"><Pencil size={16}/> Edit Student</div>
+                    <div className="admin-form-grid">
+                      {[
+                        { label: 'Name', key: 'name', type: 'text' },
+                        { label: 'Room', key: 'room', type: 'text' },
+                        { label: 'Roll Number', key: 'rollNumber', type: 'text' },
+                        { label: 'Email', key: 'email', type: 'email' },
+                      ].map(({ label, key, type }) => (
+                        <label key={key} className="admin-label">
+                          {label}
+                          <input className="admin-input" type={type} value={editStudent[key] ?? ''}
+                            onChange={e => setEditStudent((p: any) => ({ ...p, [key]: e.target.value }))}/>
+                        </label>
+                      ))}
+                      <label className="admin-label">Role
+                        <select className="admin-input" value={editStudent.role ?? 'student'}
+                          onChange={e => setEditStudent((p: any) => ({ ...p, role: e.target.value }))}>
+                          <option value="student">Student</option>
+                          <option value="manager">Manager</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="admin-modal-actions">
+                      <button className="button button-primary" onClick={async () => {
+                        await action('PUT', `/api/admin/students/${editStudent.id}`, {
+                          name: editStudent.name, room: editStudent.room, role: editStudent.role,
+                          rollNumber: editStudent.rollNumber, email: editStudent.email,
+                        }); setEditStudent(null);
+                      }}>Save</button>
+                      <button className="button button-outline" onClick={() => setEditStudent(null)}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Name</th><th>Room</th><th>Roll</th><th>Role</th><th>Email</th><th></th></tr></thead>
+                  <tbody>
+                    {(data.students ?? []).map((s: any) => (
+                      <tr key={s.id}>
+                        <td><strong>{s.name}</strong></td>
+                        <td>{s.room}</td>
+                        <td><code>{s.rollNumber ?? '—'}</code></td>
+                        <td><span className={`admin-badge ${s.role === 'manager' ? 'admin-badge-manager' : 'admin-badge-student'}`}>{s.role}</span></td>
+                        <td>{s.email ?? '—'}</td>
+                        <td className="admin-actions">
+                          <button className="admin-icon-btn" title="Edit" onClick={() => setEditStudent({ ...s })}><Pencil size={14}/></button>
+                          <button className="admin-icon-btn admin-icon-danger" title="Delete" onClick={() => { if (confirm(`Delete ${s.name}?`)) action('DELETE', `/api/admin/students/${s.id}`); }}><Trash2 size={14}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* BOOKINGS */}
+          {tab === 'bookings' && (
+            <div>
+              <div className="title-row"><div><div className="eyebrow">ALL RESERVATIONS</div><h1 className="display page-title">Bookings</h1></div></div>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Student</th><th>Room</th><th>Machine</th><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
+                  <tbody>
+                    {(data.bookings ?? []).map((b: any) => (
+                      <tr key={b.id}>
+                        <td><strong>{b.studentName}</strong></td>
+                        <td>{b.studentRoom}</td>
+                        <td>{b.machineName}</td>
+                        <td>{fmt2(b.startAt)}</td>
+                        <td>{fmt2(b.endAt)}</td>
+                        <td><span style={{ color: statusColor(b.status), fontWeight: 600, textTransform: 'capitalize' }}>{b.status}</span></td>
+                        <td className="admin-actions">
+                          <select className="admin-select" defaultValue="" onChange={e => { if (e.target.value) action('PATCH', `/api/admin/bookings/${b.id}/status`, { status: e.target.value }); e.target.value=''; }}>
+                            <option value="" disabled>Change…</option>
+                            <option value="upcoming">upcoming</option>
+                            <option value="completed">completed</option>
+                            <option value="cancelled">cancelled</option>
+                          </select>
+                          <button className="admin-icon-btn admin-icon-danger" title="Delete" onClick={() => { if (confirm('Delete booking?')) action('DELETE', `/api/admin/bookings/${b.id}`); }}><Trash2 size={14}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* MACHINES */}
+          {tab === 'machines' && (
+            <div>
+              <div className="title-row"><div><div className="eyebrow">EQUIPMENT</div><h1 className="display page-title">Machines</h1></div></div>
+              <div className="admin-add-row">
+                <input className="admin-input" placeholder="New machine name…" value={newMachineName} onChange={e => setNewMachineName(e.target.value)}/>
+                <button className="button button-primary" onClick={() => { if (newMachineName.trim()) { action('POST', '/api/admin/machines', { name: newMachineName }); setNewMachineName(''); } }}>Add Machine</button>
+              </div>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>ID</th><th>Name</th><th>Status</th><th></th></tr></thead>
+                  <tbody>
+                    {(data.machines ?? []).map((m: any) => (
+                      <tr key={m.id}>
+                        <td>{m.id}</td>
+                        <td><strong>{m.name}</strong></td>
+                        <td><span className={`admin-badge ${m.isActive ? 'admin-badge-active' : 'admin-badge-inactive'}`}>{m.isActive ? 'Active' : 'Inactive'}</span></td>
+                        <td className="admin-actions">
+                          <button className="admin-icon-btn" title={m.isActive ? 'Deactivate' : 'Activate'}
+                            onClick={() => action('PUT', `/api/admin/machines/${m.id}`, { isActive: !m.isActive })}>
+                            {m.isActive ? <X size={14}/> : <Check size={14}/>}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* DUTIES */}
+          {tab === 'duties' && (
+            <div>
+              <div className="title-row"><div><div className="eyebrow">DUTY ROSTER</div><h1 className="display page-title">Duties</h1></div></div>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Student</th><th>Room</th><th>Shift Start</th><th>Shift End</th><th>Checked In</th></tr></thead>
+                  <tbody>
+                    {(data.duties ?? []).map((d: any) => (
+                      <tr key={d.id}>
+                        <td><strong>{d.studentName}</strong></td>
+                        <td>{d.studentRoom}</td>
+                        <td>{fmt2(d.startAt)}</td>
+                        <td>{fmt2(d.endAt)}</td>
+                        <td>{d.checkedInAt ? <span style={{color:'#287765'}}><Check size={14}/> {fmt2(d.checkedInAt)}</span> : <span style={{color:'#bb5149'}}>—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {toast && <div className="admin-toast">{toast}</div>}
+    </div>
+  );
+}
 function Router() {
   return <Switch>
     <Route path="/" component={HomeRedirect}/>
     <Route path="/sign-in/*?" component={SignInPage}/>
     <Route path="/sign-up/*?" component={SignUpPage}/>
+    <Route path="/admin"><AdminRoute page={<AdminPage/>}/></Route>
     <Route path="/user-portal"><StudentRoute page={<DashboardPage/>}/></Route>
     <Route path="/bookings"><StudentRoute page={<BookingsPage/>}/></Route>
     <Route path="/book"><StudentRoute page={<BookPage/>}/></Route>
