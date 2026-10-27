@@ -37,15 +37,45 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Public unauthenticated health check
+app.get("/api/healthz", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Clerk authentication middleware for API routes
 app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
+  "/api",
+  (req, res, next) => {
+    if (!process.env.CLERK_SECRET_KEY && !process.env.CLERK_PUBLISHABLE_KEY) {
+      return next();
+    }
+    return clerkMiddleware((r) => ({
+      publishableKey: publishableKeyFromHost(
+        getClerkProxyHost(r) ?? "",
+        process.env.CLERK_PUBLISHABLE_KEY,
+      ),
+    }))(req, res, next);
+  },
 );
 
 app.use("/api", router);
 
+
+// Serve frontend in production or when client build exists
+import path from "node:path";
+import fs from "node:fs";
+
+const clientDistPath = path.resolve(__dirname, "../../hostel-laundry/dist/public");
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/__clerk")) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, "index.html"));
+  });
+}
+
+
 export default app;
+

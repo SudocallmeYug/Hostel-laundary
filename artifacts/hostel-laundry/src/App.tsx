@@ -1,19 +1,22 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ClerkProvider, Show, SignIn, SignUp, useAuth, useClerk, useUser } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
+import { QRCodeSVG } from 'qrcode.react';
+import { BrowserQRCodeReader } from '@zxing/browser';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import {
-  Activity, ArrowDownLeft, ArrowRight, BadgeCheck, CalendarDays,
+  Activity, ArrowDownLeft, ArrowRight, BadgeCheck, CalendarDays, Camera, CameraOff,
   Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Copy,
   DoorOpen, Droplets, ExternalLink, Gauge, House, KeyRound, LoaderCircle, LogOut,
   Menu, ScanLine, ShieldCheck, Shirt, Sparkles, TicketCheck, UserRound, Users,
   WashingMachine, X,
 } from 'lucide-react';
+
 import {
   useHealthCheck, useGetLaundryMe, getGetLaundryMeQueryKey,
   useGetLaundryDashboard, getGetLaundryDashboardQueryKey, useGetLaundrySlots,
@@ -33,7 +36,7 @@ const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const stripBase = (path: string) => basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path;
 const clerkAppearance = {
   theme: shadcn, cssLayerName: 'clerk',
-  options: { logoPlacement: 'inside' as const, logoLinkUrl: basePath || '/', logoImageUrl: `${window.location.origin}${basePath}/logo.svg` },
+  options: { logoPlacement: 'none' as const, logoLinkUrl: basePath || '/' },
   variables: {
     colorPrimary: '#287765', colorForeground: '#26363a', colorMutedForeground: '#687574',
     colorDanger: '#bb5149', colorBackground: '#fffaf1', colorInput: '#fffdf9',
@@ -41,13 +44,14 @@ const clerkAppearance = {
     borderRadius: '1rem',
   },
   elements: {
-    rootBox: 'w-full flex justify-center', cardBox: 'bg-[#fffaf1] rounded-2xl w-[440px] max-w-full overflow-hidden',
+    rootBox: 'w-full flex justify-center',
+    cardBox: 'bg-[#fffaf1] rounded-2xl w-[440px] max-w-full overflow-hidden shadow-none border border-[#e5dfd5]',
     card: '!shadow-none !border-0 !bg-transparent !rounded-none', footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
     headerTitle: 'text-[#26363a] font-bold', headerSubtitle: 'text-[#687574]',
     socialButtonsBlockButtonText: 'text-[#26363a] font-semibold', formFieldLabel: 'text-[#26363a] font-semibold',
     footerActionLink: 'text-[#287765] font-semibold', footerActionText: 'text-[#687574]', dividerText: 'text-[#687574]',
     identityPreviewEditButton: 'text-[#287765]', formFieldSuccessText: 'text-[#287765]', alertText: 'text-[#26363a]',
-    logoBox: 'rounded-xl', logoImage: 'rounded-xl', socialButtonsBlockButton: 'border-[#dcd8cd] rounded-xl',
+    socialButtonsBlockButton: 'border-[#dcd8cd] rounded-xl',
     formButtonPrimary: 'bg-[#287765] hover:bg-[#205f53] rounded-xl', formFieldInput: 'rounded-xl border-[#dcd8cd] bg-[#fffdf9]',
     footerAction: 'text-[#687574]', dividerLine: 'bg-[#dedacf]', alert: 'rounded-xl',
     otpCodeFieldInput: 'rounded-lg', formFieldRow: 'gap-2', main: 'gap-5',
@@ -289,9 +293,6 @@ function DutiesPage() {
   </>;
 }
 
-function TokenMark() {
-  return <div className="token-mark" aria-hidden="true"><span className="token-mark-ring"><KeyRound size={29}/></span><span>ACCESS TOKEN</span></div>;
-}
 function QrPage() {
   const q = useGetLaundryQrCodes();
   const copyToken = async (token: string, id: number) => {
@@ -306,10 +307,14 @@ function QrPage() {
   if (q.isLoading) return <Loading label="Gathering your credentials"/>;
   if (q.isError) return <QueryError retry={() => q.refetch()}/>;
   const credentials = q.data ?? [];
-  return <><Title eyebrow="READY WHEN YOU ARE">Your credentials</Title><p className="subhead page-intro">Booking and duty tokens for supervised check-in.</p>
-    <div className="credential-notice"><ScanLine size={17}/><p>These are your active access tokens. Share them only with the person supervising your check-in.</p></div>
-    {credentials.length ? <div className="credential-grid">{credentials.map((c: QrCredential) => <Panel key={`${c.kind}-${c.id}`} className="credential-card" testId={`card-credential-${c.kind}-${c.id}`}><div className="credential-card-top"><Badge tone={c.kind === 'duty' ? 'warm' : 'good'}>{c.kind}</Badge><Badge tone={statusTone(c.status)}>{c.status}</Badge></div><TokenMark/><h2 className="display credential-title">{c.label}</h2><p className="credential-time">{fmt(c.startAt, { weekday: 'long', month: 'long', day: 'numeric' })}<br/>{timeRange(c.startAt, c.endAt)}</p><div className="token-value"><span className="mono" data-testid={`text-token-${c.id}`}>{c.token}</span><button className="copy-button focus-ring" onClick={() => copyToken(c.token, c.id)} data-testid={`button-copy-token-${c.id}`} aria-label="Copy access token">{copied === c.id ? <Check size={16}/> : <Copy size={16}/>}</button></div>{copied === c.id && <span className="copy-feedback" role="status">Token copied</span>}<p className="credential-disclaimer">Token credential only. No camera-based QR scan is available in this browser view.</p></Panel>)}</div>
-      : <Panel className="empty-panel"><Empty title="No active credentials" detail="Once you have a booking or duty shift, the right token will appear here." action={<Link href="/book" className="button button-primary" data-testid="link-credential-book">Book a slot <ArrowRight size={15}/></Link>}/></Panel>}
+  return <><Title eyebrow="READY WHEN YOU ARE">Your credentials</Title><p className="subhead page-intro">Booking and duty QR credentials for supervised check-in.</p>
+    <div className="credential-notice"><ScanLine size={17}/><p>Present these QR codes to your duty supervisor for immediate camera scan, or provide the 8-character token code.</p></div>
+    {credentials.length ? <div className="credential-grid">{credentials.map((c: QrCredential) => <Panel key={`${c.kind}-${c.id}`} className="credential-card" testId={`card-credential-${c.kind}-${c.id}`}><div className="credential-card-top"><Badge tone={c.kind === 'duty' ? 'warm' : 'good'}>{c.kind}</Badge><Badge tone={statusTone(c.status)}>{c.status}</Badge></div>
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0', padding: '12px', background: '#ffffff', borderRadius: '14px', border: '1px solid #dcd8cd', width: 'fit-content', marginLeft: 'auto', marginRight: 'auto' }}>
+        <QRCodeSVG value={c.token} size={140} level="M" bgColor="#ffffff" fgColor="#26363a" />
+      </div>
+      <h2 className="display credential-title">{c.label}</h2><p className="credential-time">{fmt(c.startAt, { weekday: 'long', month: 'long', day: 'numeric' })}<br/>{timeRange(c.startAt, c.endAt)}</p><div className="token-value"><span className="mono" data-testid={`text-token-${c.id}`}>{c.token}</span><button className="copy-button focus-ring" onClick={() => copyToken(c.token, c.id)} data-testid={`button-copy-token-${c.id}`} aria-label="Copy access token">{copied === c.id ? <Check size={16}/> : <Copy size={16}/>}</button></div>{copied === c.id && <span className="copy-feedback" role="status">Token copied</span>}<p className="credential-disclaimer">Scannable QR credential. Verified against real-time slot roster.</p></Panel>)}</div>
+      : <Panel className="empty-panel"><Empty title="No active credentials" detail="Once you have a booking or duty shift, the right QR credential will appear here." action={<Link href="/book" className="button button-primary" data-testid="link-credential-book">Book a slot <ArrowRight size={15}/></Link>}/></Panel>}
   </>;
 }
 
@@ -317,15 +322,117 @@ function ScanPage() {
   const verify = useVerifyLaundryQr();
   const [token, setToken] = useState('');
   const [result, setResult] = useState<QrVerificationResult | null>(null);
-  const submit = (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); if (token.trim().length < 8) return; buzz(); setResult(null); verify.mutate({ data: { token: token.trim() } }, { onSuccess: (r) => { setResult(r); buzz(r.valid ? [18, 35, 18] : 45); } }); };
-  return <><Title eyebrow="A QUICK CHECK, DONE RIGHT">Verify a token</Title><p className="subhead page-intro">Enter the token shown on a student’s credential to confirm it with the service.</p>
-    <Panel className="verify-panel"><span className="verify-icon"><ScanLine size={22}/></span><h2 className="display section-title">Supervised check-in</h2><p>Camera scanning is not available here. Verification below checks the real token with the laundry service.</p>
-      <form onSubmit={submit} className="token-form"><label htmlFor="verify-token">Credential token</label><div className="input-with-icon"><KeyRound size={17}/><input id="verify-token" data-testid="input-verify-token" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste or enter token" minLength={8} required/></div><Button type="submit" testId="button-verify-token" disabled={verify.isPending || token.trim().length < 8}>{verify.isPending ? <LoaderCircle size={16} className="spin"/> : <ShieldCheck size={16}/>} {verify.isPending ? 'Verifying…' : 'Verify credential'}</Button></form>
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const controlsRef = useRef<{ stop: () => void } | null>(null);
+
+  const stopCamera = () => {
+    if (controlsRef.current) {
+      controlsRef.current.stop();
+      controlsRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  const startCamera = async () => {
+    setCameraError(null);
+    setCameraActive(true);
+    buzz(15);
+    setTimeout(async () => {
+      if (!videoRef.current) return;
+      try {
+        const codeReader = new BrowserQRCodeReader();
+        const controls = await codeReader.decodeFromVideoDevice(
+          undefined,
+          videoRef.current,
+          (res) => {
+            if (res) {
+              const text = res.getText();
+              if (text && text.trim().length >= 8) {
+                setToken(text.trim());
+                controls.stop();
+                controlsRef.current = null;
+                setCameraActive(false);
+                buzz([18, 35, 18]);
+                verify.mutate({ data: { token: text.trim() } }, {
+                  onSuccess: (r) => setResult(r),
+                });
+              }
+            }
+          }
+        );
+        controlsRef.current = controls;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Camera access unavailable';
+        setCameraError(`${msg}. Please enter token manually.`);
+        setCameraActive(false);
+      }
+    }, 120);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (controlsRef.current) {
+        controlsRef.current.stop();
+      }
+    };
+  }, []);
+
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (token.trim().length < 8) return;
+    buzz();
+    setResult(null);
+    verify.mutate({ data: { token: token.trim() } }, {
+      onSuccess: (r) => {
+        setResult(r);
+        buzz(r.valid ? [18, 35, 18] : 45);
+      },
+    });
+  };
+
+  return <><Title eyebrow="A QUICK CHECK, DONE RIGHT">Verify a token</Title><p className="subhead page-intro">Scan a student’s QR code with your camera or enter their credential token.</p>
+    <Panel className="verify-panel">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="verify-icon"><ScanLine size={22}/></span>
+          <div>
+            <h2 className="display section-title" style={{ margin: 0 }}>Supervised check-in</h2>
+            <p style={{ margin: 0, fontSize: 13, color: '#687574' }}>Live QR scanning or manual token lookup</p>
+          </div>
+        </div>
+        <Button variant={cameraActive ? 'danger' : 'outline'} testId="button-toggle-camera" onClick={cameraActive ? stopCamera : startCamera}>
+          {cameraActive ? <CameraOff size={16}/> : <Camera size={16}/>} {cameraActive ? 'Close camera' : 'Scan with camera'}
+        </Button>
+      </div>
+
+      {cameraActive && (
+        <div style={{ marginBottom: 20, textAlign: 'center' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 360, margin: '0 auto', overflow: 'hidden', borderRadius: 16, background: '#1c2426' }}>
+            <video ref={videoRef} style={{ width: '100%', height: 260, objectFit: 'cover' }} playsInline muted />
+            <div style={{ position: 'absolute', inset: 30, border: '2px dashed #287765', borderRadius: 12, pointerEvents: 'none' }} />
+          </div>
+          <p style={{ fontSize: 12, color: '#687574', marginTop: 8 }}>Point your camera directly at the student’s QR code</p>
+        </div>
+      )}
+
+      {cameraError && <div className="inline-error" style={{ marginBottom: 14 }}>{cameraError}</div>}
+
+      <form onSubmit={submit} className="token-form">
+        <label htmlFor="verify-token">Credential token</label>
+        <div className="input-with-icon"><KeyRound size={17}/><input id="verify-token" data-testid="input-verify-token" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste or enter token" minLength={8} required/></div>
+        <Button type="submit" testId="button-verify-token" disabled={verify.isPending || token.trim().length < 8}>
+          {verify.isPending ? <LoaderCircle size={16} className="spin"/> : <ShieldCheck size={16}/>} {verify.isPending ? 'Verifying…' : 'Verify credential'}
+        </Button>
+      </form>
       {verify.isError && <div className="verify-result verify-invalid" role="alert" data-testid="status-verify-error"><X size={18}/><span>Couldn’t verify this token. Check the value and try again.</span></div>}
       {result && <div className={`verify-result ${result.valid ? 'verify-valid' : 'verify-invalid'}`} data-testid="status-verification-result">{result.valid ? <BadgeCheck size={19}/> : <X size={19}/>}<span><b>{result.valid ? 'Credential verified' : 'Not verified'}</b><small>{result.message}</small>{result.valid && result.relatedId && <small>{result.kind === 'duty' ? 'Duty assignment' : 'Booking'} · reference {result.relatedId}</small>}</span></div>}
-    </Panel><div className="fine-print"><ShieldCheck size={14}/> Only a successful service verification should be used to confirm a handover.</div>
+    </Panel>
+    <div className="fine-print"><ShieldCheck size={14}/> Only a successful service verification should be used to confirm a handover.</div>
   </>;
 }
+
 
 function HandoverPage() {
   const duties = useGetLaundryDuties();
@@ -412,10 +519,10 @@ function StudentRoute({ page }: { page: ReactNode }) {
   return <Protected>{page}</Protected>;
 }
 function SignInPage() {
-  return <div className="auth-screen"><Link href="/" className="auth-home-brand"><span className="brand-mark"><Droplets size={17}/></span><b>WASHROOM</b></Link><div className="auth-frame"><div className="auth-head"><div className="eyebrow">YOUR SHARED SPACE</div><h1 className="display">Welcome back.</h1><p>Sign in to see your wash times and duty.</p></div><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}/></div><p className="auth-footer">A little room for everyone.</p></div>;
+  return <div className="auth-screen"><Link href="/" className="auth-home-brand" data-testid="link-auth-brand-signin"><span className="brand-mark"><Droplets size={17}/></span><span><b>WASHROOM</b><small>HOSTEL LAUNDRY</small></span></Link><div className="auth-frame"><div className="auth-head"><div className="eyebrow">YOUR SHARED SPACE</div><h1 className="display">Welcome back.</h1><p>Sign in to see your wash times and duty.</p></div><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}/></div><p className="auth-footer">A little room for everyone.</p></div>;
 }
 function SignUpPage() {
-  return <div className="auth-screen"><Link href="/" className="auth-home-brand"><span className="brand-mark"><Droplets size={17}/></span><b>WASHROOM</b></Link><div className="auth-frame"><div className="auth-head"><div className="eyebrow">JOIN THE ROOM</div><h1 className="display">Make yourself at home.</h1><p>Set up your account to book and share fairly.</p></div><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}/></div><p className="auth-footer">A little room for everyone.</p></div>;
+  return <div className="auth-screen"><Link href="/" className="auth-home-brand" data-testid="link-auth-brand-signup"><span className="brand-mark"><Droplets size={17}/></span><span><b>WASHROOM</b><small>HOSTEL LAUNDRY</small></span></Link><div className="auth-frame"><div className="auth-head"><div className="eyebrow">JOIN THE ROOM</div><h1 className="display">Make yourself at home.</h1><p>Set up your account to book and share fairly.</p></div><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}/></div><p className="auth-footer">A little room for everyone.</p></div>;
 }
 function Router() {
   return <Switch>

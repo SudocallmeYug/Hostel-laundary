@@ -10,7 +10,23 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const connectionString = process.env.DATABASE_URL;
+const isProduction = process.env.NODE_ENV === "production";
+const useSsl =
+  connectionString.includes("sslmode=require") ||
+  connectionString.includes(".neon.tech") ||
+  connectionString.includes("supabase.co") ||
+  process.env.DB_SSL === "true" ||
+  (isProduction && !connectionString.includes("localhost"));
+
+export const pool = new Pool({
+  connectionString,
+  ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+  max: Number(process.env.DB_POOL_MAX || 20),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
 export const db = drizzle(pool, { schema });
+
 
 export * from "./schema";

@@ -1,0 +1,8 @@
+node_modules
+.git
+.conversation
+artifacts/**/node_modules
+lib/**/node_modules
+*.log
+.DS_Store
+.agents
