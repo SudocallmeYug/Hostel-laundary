@@ -70,13 +70,28 @@ export async function ensureStudentForRequest(req: Request) {
           .filter((value): value is string => typeof value === "string")
           .join(" ");
   const metadata =
-    claims?.publicMetadata ??
+    (claims?.publicMetadata ??
     claims?.public_metadata ??
-    claims?.metadata;
+    claims?.metadata ??
+    claims?.unsafeMetadata ??
+    claims?.unsafe_metadata) as Record<string, unknown> | undefined;
   const roomFromClaims =
     metadata && typeof metadata === "object"
-      ? (metadata as Record<string, unknown>).room
+      ? (metadata.room ?? metadata.roomNumber)
       : undefined;
+  const rollFromClaims =
+    (typeof claims?.username === "string" ? claims.username : undefined) ??
+    (metadata && typeof metadata === "object"
+      ? (metadata.rollNumber ?? metadata.roll_number ?? metadata.username)
+      : undefined);
+  const emailFromClaims =
+    typeof claims?.email === "string"
+      ? claims.email
+      : typeof claims?.primary_email_address === "string"
+        ? claims.primary_email_address
+        : metadata && typeof metadata.email === "string"
+          ? metadata.email
+          : undefined;
   const role = getAppRole(req);
 
   const [existing] = await db
@@ -95,16 +110,36 @@ export async function ensureStudentForRequest(req: Request) {
           typeof roomFromClaims === "string" && roomFromClaims.trim()
             ? roomFromClaims.trim()
             : "Not set",
+        rollNumber:
+          typeof rollFromClaims === "string" && rollFromClaims.trim()
+            ? rollFromClaims.trim()
+            : null,
+        email:
+          typeof emailFromClaims === "string" && emailFromClaims.trim()
+            ? emailFromClaims.trim()
+            : null,
         role,
       })
       .returning();
     return created;
   }
 
-  if (existing.role !== role) {
+  const updates: Partial<typeof laundryStudentsTable.$inferInsert> = {};
+  if (existing.role !== role) updates.role = role;
+  if (!existing.rollNumber && typeof rollFromClaims === "string" && rollFromClaims.trim()) {
+    updates.rollNumber = rollFromClaims.trim();
+  }
+  if (!existing.email && typeof emailFromClaims === "string" && emailFromClaims.trim()) {
+    updates.email = emailFromClaims.trim();
+  }
+  if (existing.room === "Not set" && typeof roomFromClaims === "string" && roomFromClaims.trim()) {
+    updates.room = roomFromClaims.trim();
+  }
+
+  if (Object.keys(updates).length > 0) {
     const [updated] = await db
       .update(laundryStudentsTable)
-      .set({ role })
+      .set(updates)
       .where(eq(laundryStudentsTable.id, existing.id))
       .returning();
     return updated;

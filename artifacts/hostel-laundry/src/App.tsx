@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { ClerkProvider, Show, SignIn, SignUp, useAuth, useClerk, useUser } from '@clerk/react';
+import { ClerkProvider, Show, useAuth, useClerk, useSignIn, useSignUp, useUser } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { QRCodeSVG } from 'qrcode.react';
@@ -10,10 +10,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import {
-  Activity, ArrowDownLeft, ArrowRight, BadgeCheck, CalendarDays, Camera, CameraOff,
+  Activity, AlertCircle, ArrowDownLeft, ArrowLeft, ArrowRight, BadgeCheck, CalendarDays, Camera, CameraOff,
   Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Copy,
-  DoorOpen, Droplets, ExternalLink, Gauge, House, KeyRound, LoaderCircle, LogOut,
-  Menu, ScanLine, ShieldCheck, Shirt, Sparkles, TicketCheck, UserRound, Users,
+  DoorOpen, Droplets, ExternalLink, Eye, EyeOff, Gauge, Hash, House, KeyRound, LoaderCircle, LogOut,
+  Mail, Menu, ScanLine, ShieldCheck, Shirt, Sparkles, TicketCheck, UserRound, Users,
   WashingMachine, X,
 } from 'lucide-react';
 
@@ -519,11 +519,475 @@ function ManagerPage() {
 function StudentRoute({ page }: { page: ReactNode }) {
   return <Protected>{page}</Protected>;
 }
+function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 'register' }) {
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+  const [, setLocation] = useLocation();
+  const clerk = useClerk();
+
+  // Login form state
+  const [loginRoll, setLoginRoll] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [showLoginPass, setShowLoginPass] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+
+  // Register form state
+  const [regFirstName, setRegFirstName] = useState('');
+  const [regLastName, setRegLastName] = useState('');
+  const [regRoom, setRegRoom] = useState('');
+  const [regRoll, setRegRoll] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPass, setRegPass] = useState('');
+  const [showRegPass, setShowRegPass] = useState(false);
+  const [regStep, setRegStep] = useState<'details' | 'otp'>('details');
+  const [otpCode, setOtpCode] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regError, setRegError] = useState('');
+  const [resendStatus, setResendStatus] = useState('');
+
+  // Handle Login with Roll Number + Password
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!clerk.loaded) return;
+    setLoginError('');
+    setLoginLoading(true);
+
+    try {
+      const cleanRoll = loginRoll.trim().toLowerCase();
+      const res = await clerk.client.signIn.create({
+        identifier: cleanRoll,
+        password: loginPass,
+      });
+
+      if (res.status === 'complete') {
+        await clerk.setActive({ session: res.createdSessionId });
+        setLocation('/user-portal');
+      } else {
+        setLoginError('Sign in could not be completed. Please check your credentials.');
+      }
+    } catch (err: any) {
+      const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || 'Invalid roll number or password.';
+      setLoginError(msg);
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  // Handle Register Step 1: Submit Details & Trigger Email OTP
+  async function handleRegisterDetails(e: React.FormEvent) {
+    e.preventDefault();
+    if (!clerk.loaded) return;
+    setRegError('');
+    setRegLoading(true);
+
+    try {
+      const cleanRoll = regRoll.trim().toLowerCase();
+      const cleanEmail = regEmail.trim().toLowerCase();
+      const cleanRoom = regRoom.trim().toUpperCase();
+      const cleanFirstName = regFirstName.trim();
+      const cleanLastName = regLastName.trim();
+
+      await clerk.client.signUp.create({
+        firstName: cleanFirstName,
+        lastName: cleanLastName,
+        username: cleanRoll,
+        emailAddress: cleanEmail,
+        password: regPass,
+        unsafeMetadata: {
+          room: cleanRoom,
+          rollNumber: regRoll.trim().toUpperCase(),
+        },
+      });
+
+      // Prepare email OTP code verification
+      await clerk.client.signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setRegStep('otp');
+    } catch (err: any) {
+      const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || 'Could not start registration. Please check your details.';
+      setRegError(msg);
+    } finally {
+      setRegLoading(false);
+    }
+  }
+
+  // Handle Register Step 2: Verify Email OTP and Save in Neon DB
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!clerk.loaded) return;
+    setRegError('');
+    setRegLoading(true);
+
+    try {
+      const completeSignUp = await clerk.client.signUp.attemptEmailAddressVerification({
+        code: otpCode.trim(),
+      });
+
+      if (completeSignUp.status === 'complete') {
+        await clerk.setActive({ session: completeSignUp.createdSessionId });
+
+        // Save immediately into Neon PostgreSQL database
+        try {
+          await fetch('/api/laundry/me', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `${regFirstName.trim()} ${regLastName.trim()}`,
+              room: regRoom.trim().toUpperCase(),
+            }),
+          });
+        } catch (dbErr) {
+          console.warn('Neon DB sync error:', dbErr);
+        }
+
+        setLocation('/user-portal');
+      } else {
+        setRegError('Verification code was not accepted. Please check the code and try again.');
+      }
+    } catch (err: any) {
+      const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || 'Invalid verification code. Please try again.';
+      setRegError(msg);
+    } finally {
+      setRegLoading(false);
+    }
+  }
+
+  // Resend OTP Code
+  async function handleResendCode() {
+    if (!clerk.loaded) return;
+    setResendStatus('');
+    try {
+      await clerk.client.signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setResendStatus('New verification code sent to your email!');
+    } catch (err: any) {
+      setRegError(err.errors?.[0]?.message || 'Could not resend code. Please wait a moment.');
+    }
+  }
+
+  return (
+    <div className="auth-screen">
+      <Link href="/" className="auth-home-brand" data-testid="link-auth-brand">
+        <span className="brand-mark"><Droplets size={17}/></span>
+        <span><b>WASHROOM</b><small>HOSTEL LAUNDRY</small></span>
+      </Link>
+
+      <div className="auth-frame">
+        <div className="custom-auth-card">
+          <div className="custom-auth-nav">
+            <button
+              type="button"
+              className={`custom-auth-tab ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => { setMode('login'); setLoginError(''); }}
+              data-testid="tab-auth-login"
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`custom-auth-tab ${mode === 'register' ? 'active' : ''}`}
+              onClick={() => { setMode('register'); setRegError(''); }}
+              data-testid="tab-auth-register"
+            >
+              Register
+            </button>
+          </div>
+
+          {mode === 'login' ? (
+            <div>
+              <div className="auth-head" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">STUDENT ACCESS</div>
+                <h1 className="display" style={{ fontSize: 26, margin: '6px 0' }}>Welcome back.</h1>
+                <p>Enter your roll number and password to sign in.</p>
+              </div>
+
+              {loginError && (
+                <div className="auth-error-box" role="alert" style={{ marginBottom: 16 }}>
+                  <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              <form className="custom-auth-form" onSubmit={handleLogin}>
+                <div className="auth-field-group">
+                  <label htmlFor="login-roll">Roll Number</label>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon"><Hash size={16}/></span>
+                    <input
+                      id="login-roll"
+                      type="text"
+                      className="auth-input mono"
+                      placeholder="e.g. 23BCE1042"
+                      value={loginRoll}
+                      onChange={(e) => setLoginRoll(e.target.value)}
+                      autoComplete="username"
+                      required
+                      data-testid="input-login-roll"
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field-group">
+                  <label htmlFor="login-pass">Password</label>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon"><KeyRound size={16}/></span>
+                    <input
+                      id="login-pass"
+                      type={showLoginPass ? 'text' : 'password'}
+                      className="auth-input"
+                      placeholder="Your account password"
+                      value={loginPass}
+                      onChange={(e) => setLoginPass(e.target.value)}
+                      autoComplete="current-password"
+                      required
+                      data-testid="input-login-password"
+                    />
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setShowLoginPass(!showLoginPass)}
+                      aria-label={showLoginPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showLoginPass ? <EyeOff size={16}/> : <Eye size={16}/>}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-submit-btn"
+                  disabled={loginLoading || !loginRoll.trim() || !loginPass}
+                  data-testid="btn-login-submit"
+                >
+                  {loginLoading ? <LoaderCircle size={18} className="spin"/> : <ArrowRight size={18}/>}
+                  {loginLoading ? 'Signing in…' : 'Sign in to Washroom'}
+                </button>
+              </form>
+            </div>
+          ) : regStep === 'details' ? (
+            <div>
+              <div className="auth-head" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">JOIN THE ROOM</div>
+                <h1 className="display" style={{ fontSize: 26, margin: '6px 0' }}>Student registration</h1>
+                <p>Set up your hostel room and roll number.</p>
+              </div>
+
+              {regError && (
+                <div className="auth-error-box" role="alert" style={{ marginBottom: 16 }}>
+                  <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{regError}</span>
+                </div>
+              )}
+
+              <form className="custom-auth-form" onSubmit={handleRegisterDetails}>
+                <div className="auth-row-2col">
+                  <div className="auth-field-group">
+                    <label htmlFor="reg-first-name">First Name</label>
+                    <div className="auth-input-wrapper">
+                      <span className="auth-input-icon"><UserRound size={16}/></span>
+                      <input
+                        id="reg-first-name"
+                        type="text"
+                        className="auth-input"
+                        placeholder="First name"
+                        value={regFirstName}
+                        onChange={(e) => setRegFirstName(e.target.value)}
+                        required
+                        data-testid="input-reg-firstname"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="auth-field-group">
+                    <label htmlFor="reg-last-name">Last Name</label>
+                    <div className="auth-input-wrapper">
+                      <input
+                        id="reg-last-name"
+                        type="text"
+                        className="auth-input"
+                        placeholder="Last name"
+                        style={{ paddingLeft: 14 }}
+                        value={regLastName}
+                        onChange={(e) => setRegLastName(e.target.value)}
+                        required
+                        data-testid="input-reg-lastname"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="auth-row-2col">
+                  <div className="auth-field-group">
+                    <label htmlFor="reg-room">Room Number</label>
+                    <div className="auth-input-wrapper">
+                      <span className="auth-input-icon"><DoorOpen size={16}/></span>
+                      <input
+                        id="reg-room"
+                        type="text"
+                        className="auth-input mono"
+                        placeholder="e.g. B-204"
+                        value={regRoom}
+                        onChange={(e) => setRegRoom(e.target.value)}
+                        required
+                        data-testid="input-reg-room"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="auth-field-group">
+                    <label htmlFor="reg-roll">Roll Number</label>
+                    <div className="auth-input-wrapper">
+                      <span className="auth-input-icon"><Hash size={16}/></span>
+                      <input
+                        id="reg-roll"
+                        type="text"
+                        className="auth-input mono"
+                        placeholder="e.g. 23BCE1042"
+                        value={regRoll}
+                        onChange={(e) => setRegRoll(e.target.value)}
+                        required
+                        data-testid="input-reg-roll"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="auth-field-group">
+                  <label htmlFor="reg-email">Email Address</label>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon"><Mail size={16}/></span>
+                    <input
+                      id="reg-email"
+                      type="email"
+                      className="auth-input"
+                      placeholder="student@hostel.edu"
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      required
+                      data-testid="input-reg-email"
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field-group">
+                  <label htmlFor="reg-pass">Set Password</label>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon"><KeyRound size={16}/></span>
+                    <input
+                      id="reg-pass"
+                      type={showRegPass ? 'text' : 'password'}
+                      className="auth-input"
+                      placeholder="At least 8 characters"
+                      value={regPass}
+                      onChange={(e) => setRegPass(e.target.value)}
+                      minLength={8}
+                      required
+                      data-testid="input-reg-password"
+                    />
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setShowRegPass(!showRegPass)}
+                      aria-label={showRegPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showRegPass ? <EyeOff size={16}/> : <Eye size={16}/>}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-submit-btn"
+                  disabled={regLoading || !regFirstName.trim() || !regRoom.trim() || !regRoll.trim() || !regEmail.trim() || regPass.length < 8}
+                  data-testid="btn-reg-details-submit"
+                >
+                  {regLoading ? <LoaderCircle size={18} className="spin"/> : <ArrowRight size={18}/>}
+                  {regLoading ? 'Sending verification code…' : 'Send Verification Code'}
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="otp-container">
+              <div className="otp-icon-wrap">
+                <Mail size={28}/>
+              </div>
+
+              <div>
+                <h1 className="display" style={{ fontSize: 24, margin: '0 0 6px' }}>Verify your email</h1>
+                <p style={{ color: '#5f6d66', fontSize: 14, margin: 0 }}>
+                  We sent a 6-digit code to <b style={{ color: '#223235' }}>{regEmail}</b>
+                </p>
+              </div>
+
+              {regError && (
+                <div className="auth-error-box" role="alert" style={{ width: '100%', textAlign: 'left' }}>
+                  <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{regError}</span>
+                </div>
+              )}
+
+              {resendStatus && (
+                <div className="success-note" style={{ width: '100%', justifyContent: 'center' }}>
+                  <CheckCircle2 size={16}/> {resendStatus}
+                </div>
+              )}
+
+              <form className="custom-auth-form" style={{ width: '100%' }} onSubmit={handleVerifyOtp}>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <input
+                    type="text"
+                    className="otp-input-field"
+                    placeholder="••••••"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    autoFocus
+                    required
+                    data-testid="input-otp-code"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-submit-btn"
+                  disabled={regLoading || otpCode.length < 6}
+                  data-testid="btn-verify-otp"
+                >
+                  {regLoading ? <LoaderCircle size={18} className="spin"/> : <Check size={18}/>}
+                  {regLoading ? 'Verifying…' : 'Verify & Complete Registration'}
+                </button>
+
+                <div className="otp-footer-links">
+                  <button
+                    type="button"
+                    className="otp-link-btn"
+                    onClick={() => { setRegStep('details'); setRegError(''); }}
+                  >
+                    ← Edit details
+                  </button>
+
+                  <button
+                    type="button"
+                    className="otp-link-btn"
+                    onClick={handleResendCode}
+                  >
+                    Resend code
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="auth-footer">WASHROOM · Fair shared laundry routines.</p>
+    </div>
+  );
+}
+
 function SignInPage() {
-  return <div className="auth-screen"><Link href="/" className="auth-home-brand" data-testid="link-auth-brand-signin"><span className="brand-mark"><Droplets size={17}/></span><span><b>WASHROOM</b><small>HOSTEL LAUNDRY</small></span></Link><div className="auth-frame"><div className="auth-head"><div className="eyebrow">YOUR SHARED SPACE</div><h1 className="display">Welcome back.</h1><p>Sign in to see your wash times and duty.</p></div><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}/></div><p className="auth-footer">A little room for everyone.</p></div>;
+  return <CustomAuthPage initialMode="login" />;
 }
 function SignUpPage() {
-  return <div className="auth-screen"><Link href="/" className="auth-home-brand" data-testid="link-auth-brand-signup"><span className="brand-mark"><Droplets size={17}/></span><span><b>WASHROOM</b><small>HOSTEL LAUNDRY</small></span></Link><div className="auth-frame"><div className="auth-head"><div className="eyebrow">JOIN THE ROOM</div><h1 className="display">Make yourself at home.</h1><p>Set up your account to book and share fairly.</p></div><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}/></div><p className="auth-footer">A little room for everyone.</p></div>;
+  return <CustomAuthPage initialMode="register" />;
 }
 function Router() {
   return <Switch>

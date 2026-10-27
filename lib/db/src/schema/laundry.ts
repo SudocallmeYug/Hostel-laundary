@@ -18,12 +18,17 @@ export const laundryStudentsTable = pgTable(
     clerkUserId: text("clerk_user_id").notNull(),
     name: text("name").notNull().default("Student"),
     room: text("room").notNull().default("Not set"),
+    rollNumber: text("roll_number"),
+    email: text("email"),
     role: text("role").notNull().default("student"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [uniqueIndex("laundry_students_clerk_user_id_idx").on(table.clerkUserId)],
+  (table) => [
+    uniqueIndex("laundry_students_clerk_user_id_idx").on(table.clerkUserId),
+    index("laundry_students_roll_number_idx").on(table.rollNumber),
+  ],
 );
 
 export const laundryMachinesTable = pgTable(

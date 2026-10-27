@@ -454,3 +454,206 @@ button { cursor: pointer; }
 .skeleton-card { height: 180px; width: 100%; border-radius: 14px; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Custom Auth Component Styles ───────────────────────────────── */
+.custom-auth-card {
+  background: #fffdfa;
+  border: 1px solid #e7e2d8;
+  border-radius: 20px;
+  padding: 32px 28px;
+  box-shadow: 0 10px 30px rgba(38, 54, 58, 0.05);
+  width: 100%;
+}
+.custom-auth-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: #f0ede5;
+  padding: 4px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+.custom-auth-tab {
+  background: transparent;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6c7872;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  text-align: center;
+}
+.custom-auth-tab.active {
+  background: #ffffff;
+  color: #223235;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.custom-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.auth-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auth-field-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #455550;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.auth-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.auth-input-icon {
+  position: absolute;
+  left: 14px;
+  color: #8a9690;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+.auth-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px 0 42px;
+  background: #ffffff;
+  border: 1.5px solid #dfdacf;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #223235;
+  outline: none;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.auth-input:focus {
+  border-color: #287765;
+  box-shadow: 0 0 0 3px rgba(40, 119, 101, 0.12);
+}
+.auth-input.mono {
+  font-family: var(--app-font-mono), monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.auth-password-toggle {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #8a9690;
+  cursor: pointer;
+  padding: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.auth-password-toggle:hover {
+  color: #287765;
+}
+.auth-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.auth-submit-btn {
+  width: 100%;
+  height: 48px;
+  margin-top: 8px;
+  background: #287765;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(40, 119, 101, 0.25);
+}
+.auth-submit-btn:hover:not(:disabled) {
+  background: #206253;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(40, 119, 101, 0.3);
+}
+.auth-submit-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+.auth-error-box {
+  background: #fdf2f0;
+  border: 1px solid #f8d5cf;
+  color: #b53830;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.otp-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 20px;
+}
+.otp-icon-wrap {
+  width: 56px;
+  height: 56px;
+  background: #eaf3ee;
+  color: #287765;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+}
+.otp-input-field {
+  width: 100%;
+  max-width: 260px;
+  height: 54px;
+  font-size: 26px;
+  letter-spacing: 0.35em;
+  text-align: center;
+  font-family: var(--app-font-mono), monospace;
+  font-weight: 700;
+  background: #ffffff;
+  border: 2px solid #dfdacf;
+  border-radius: 12px;
+  color: #223235;
+  outline: none;
+  transition: all 0.15s;
+}
+.otp-input-field:focus {
+  border-color: #287765;
+  box-shadow: 0 0 0 4px rgba(40, 119, 101, 0.15);
+}
+.otp-footer-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.otp-link-btn {
+  background: none;
+  border: none;
+  color: #287765;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.otp-link-btn:hover {
+  text-decoration: underline;
+}
