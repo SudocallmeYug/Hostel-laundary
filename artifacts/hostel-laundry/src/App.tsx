@@ -169,7 +169,8 @@ function HomeRedirect() {
   if (!isLoaded) return <div className="auth-loading"><Loading label="Preparing your space"/></div>;
   if (!isSignedIn) return <Home/>;
   const role = (user?.publicMetadata as any)?.role;
-  return role === 'admin' ? <Redirect to="/admin"/> : <Redirect to="/user-portal"/>;
+  const username = user?.username?.toLowerCase();
+  return (role === 'admin' || username === 'admin') ? <Redirect to="/admin"/> : <Redirect to="/user-portal"/>;
 }
 function Protected({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -522,19 +523,174 @@ function ManagerPage() {
 function StudentRoute({ page }: { page: ReactNode }) {
   return <Protected>{page}</Protected>;
 }
+
+function AdminLoginPage() {
+  const [, setLocation] = useLocation();
+  const { signIn, setActive: setSignInActive, isLoaded: signInLoaded } = useSignIn();
+  const [adminUser, setAdminUser] = useState('admin');
+  const [adminPass, setAdminPass] = useState('Adm!nW@sh2026#X9');
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleAdminLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!signInLoaded || !signIn) return;
+    setError('');
+    setLoading(true);
+
+    try {
+      const cleanUser = adminUser.trim().toLowerCase();
+      let res;
+      try {
+        res = await signIn.create({
+          identifier: cleanUser,
+          password: adminPass,
+        });
+      } catch {
+        const attempt = await signIn.create({ identifier: cleanUser });
+        res = await attempt.attemptFirstFactor({
+          strategy: 'password',
+          password: adminPass,
+        });
+      }
+
+      if (res.status === 'complete') {
+        await setSignInActive!({ session: res.createdSessionId });
+        setLocation('/admin');
+      } else {
+        setError('Sign in could not be completed. Please check your admin credentials.');
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage || err.errors?.[0]?.message || 'Invalid admin username or password.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="auth-screen">
+      <Link href="/" className="auth-home-brand" data-testid="link-admin-brand">
+        <span className="brand-mark"><ShieldCheck size={17}/></span>
+        <span><b>WASHROOM ADMIN</b><small>HOSTEL MANAGEMENT</small></span>
+      </Link>
+
+      <div className="auth-frame">
+        <div className="custom-auth-card" style={{ borderColor: '#287765' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ background: '#287765', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em' }}>
+              ADMINISTRATOR ACCESS
+            </span>
+          </div>
+
+          <div className="auth-head" style={{ marginBottom: 20 }}>
+            <h1 className="display" style={{ fontSize: 26, margin: '6px 0' }}>Admin Console Login</h1>
+            <p>Access hostel laundry controls, student records, machine status, and duty rotas.</p>
+          </div>
+
+          {error && (
+            <div className="auth-error-box" role="alert" style={{ marginBottom: 16 }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 12, color: '#166534' }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Default Admin Credentials:</div>
+            <div>Username: <code style={{ background: '#dcfce7', padding: '1px 5px', borderRadius: 4, fontWeight: 'bold' }}>admin</code></div>
+            <div>Password: <code style={{ background: '#dcfce7', padding: '1px 5px', borderRadius: 4, fontWeight: 'bold' }}>Adm!nW@sh2026#X9</code></div>
+          </div>
+
+          <form className="custom-auth-form" onSubmit={handleAdminLogin}>
+            <div className="auth-field-group">
+              <label htmlFor="admin-user">Admin Username</label>
+              <div className="auth-input-wrapper">
+                <span className="auth-input-icon"><UserRound size={16}/></span>
+                <input
+                  id="admin-user"
+                  type="text"
+                  className="auth-input mono"
+                  placeholder="admin"
+                  value={adminUser}
+                  onChange={(e) => setAdminUser(e.target.value)}
+                  autoComplete="username"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="auth-field-group">
+              <label htmlFor="admin-pass">Password</label>
+              <div className="auth-input-wrapper">
+                <span className="auth-input-icon"><KeyRound size={16}/></span>
+                <input
+                  id="admin-pass"
+                  type={showPass ? 'text' : 'password'}
+                  className="auth-input"
+                  placeholder="Admin password"
+                  value={adminPass}
+                  onChange={(e) => setAdminPass(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-password-toggle"
+                  onClick={() => setShowPass(!showPass)}
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
+                >
+                  {showPass ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="button button-primary auth-submit-btn"
+              disabled={loading}
+              style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+            >
+              {loading ? (
+                <>
+                  <LoaderCircle size={16} className="spin" />
+                  <span>Verifying admin access…</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={16} />
+                  <span>Enter Admin Dashboard</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div style={{ marginTop: 20, textAlign: 'center' }}>
+            <Link href="/sign-in" style={{ fontSize: 13, color: '#687574', textDecoration: 'underline' }}>
+              ← Return to Student Sign In
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminRoute({ page }: { page: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   if (!isLoaded) return <div className="auth-loading"><Loading label="Checking admin access"/></div>;
-  if (!isSignedIn) return <Redirect to="/"/>;
+  if (!isSignedIn) return <AdminLoginPage/>;
   const role = (user?.publicMetadata as any)?.role;
-  if (role !== 'admin') return <Redirect to="/user-portal"/>;
+  const username = user?.username?.toLowerCase();
+  if (role !== 'admin' && username !== 'admin') return <Redirect to="/user-portal"/>;
   return <>{page}</>;
 }
+
 function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 'register' }) {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [, setLocation] = useLocation();
   const clerk = useClerk();
+  const { signIn, setActive: setSignInActive, isLoaded: signInLoaded } = useSignIn();
 
   // Login form state
   const [loginRoll, setLoginRoll] = useState('');
@@ -557,32 +713,40 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
   const [regError, setRegError] = useState('');
   const [resendStatus, setResendStatus] = useState('');
 
-  // Handle Login with Roll Number + Password
+  // Handle Login with Roll Number or Username + Password
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!clerk.loaded) return;
+    if (!signInLoaded || !signIn) return;
     setLoginError('');
     setLoginLoading(true);
 
     try {
       const cleanRoll = loginRoll.trim().toLowerCase();
 
-      // Step 1: Identify the user by roll number (username)
-      const signInAttempt = await clerk.client.signIn.create({
-        identifier: cleanRoll,
-      });
-
-      // Step 2: Submit the password as first factor
-      const res = await signInAttempt.attemptFirstFactor({
-        strategy: 'password',
-        password: loginPass,
-      });
+      // Attempt sign in with password
+      let res;
+      try {
+        res = await signIn.create({
+          identifier: cleanRoll,
+          password: loginPass,
+        });
+      } catch {
+        const attempt = await signIn.create({ identifier: cleanRoll });
+        res = await attempt.attemptFirstFactor({
+          strategy: 'password',
+          password: loginPass,
+        });
+      }
 
       if (res.status === 'complete') {
-        await clerk.setActive({ session: res.createdSessionId });
-        setLocation('/user-portal');
+        await setSignInActive!({ session: res.createdSessionId });
+        if (cleanRoll === 'admin') {
+          setLocation('/admin');
+        } else {
+          setLocation('/user-portal');
+        }
       } else {
-        console.error('Unexpected sign-in status:', res.status, res);
+        console.error('Unexpected sign-in status:', res.status);
         setLoginError('Sign in could not be completed. Please check your credentials.');
       }
     } catch (err: any) {
@@ -713,7 +877,7 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
 
           {mode === 'login' ? (
             <div>
-              <div className="auth-head" style={{ marginBottom: 20 }}>
+              <div className="auth-head" style={{ marginBottom: 16 }}>
                 <div className="eyebrow">STUDENT ACCESS</div>
                 <h1 className="display" style={{ fontSize: 26, margin: '6px 0' }}>Welcome back.</h1>
                 <p>Enter your roll number and password to sign in.</p>
@@ -726,16 +890,33 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
                 </div>
               )}
 
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 12, color: '#334155' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600 }}>Demo Student Account:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginRoll('23BCE1001');
+                      setLoginPass('Washroom2026#Secure');
+                    }}
+                    style={{ background: '#287765', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Quick Fill
+                  </button>
+                </div>
+                <div>Roll No: <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 4 }}>23BCE1001</code> | Password: <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 4 }}>Washroom2026#Secure</code></div>
+              </div>
+
               <form className="custom-auth-form" onSubmit={handleLogin}>
                 <div className="auth-field-group">
-                  <label htmlFor="login-roll">Roll Number</label>
+                  <label htmlFor="login-roll">Roll Number or Username</label>
                   <div className="auth-input-wrapper">
                     <span className="auth-input-icon"><Hash size={16}/></span>
                     <input
                       id="login-roll"
                       type="text"
                       className="auth-input mono"
-                      placeholder="e.g. 23BCE1042"
+                      placeholder="e.g. 23BCE1001 or admin"
                       value={loginRoll}
                       onChange={(e) => setLoginRoll(e.target.value)}
                       autoComplete="username"
@@ -781,6 +962,12 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
                   {loginLoading ? 'Signing in…' : 'Sign in to Washroom'}
                 </button>
               </form>
+
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5dfd5', textAlign: 'center' }}>
+                <Link href="/admin" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#287765', fontWeight: 600, textDecoration: 'none' }}>
+                  <ShieldCheck size={15}/> Administrator Console Login →
+                </Link>
+              </div>
             </div>
           ) : regStep === 'details' ? (
             <div>

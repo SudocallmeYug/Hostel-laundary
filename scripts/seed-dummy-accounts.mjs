@@ -63,6 +63,15 @@ const accounts = [
     email: 'vikram.manager.hostel@gmail.com',
     password: 'Washroom2026#Secure',
     role: 'manager'
+  },
+  {
+    firstName: 'Admin',
+    lastName: 'WASHROOM',
+    rollNumber: 'admin',
+    room: 'ADMIN',
+    email: 'admin.washroom.hostel@gmail.com',
+    password: 'Adm!nW@sh2026#X9',
+    role: 'admin'
   }
 ];
 
@@ -100,6 +109,7 @@ async function seed() {
         body: JSON.stringify({
           password: acc.password,
           skip_password_checks: true,
+          bypass_client_trust: true,
           public_metadata: {
             room: acc.room,
             rollNumber: acc.rollNumber,
@@ -122,6 +132,7 @@ async function seed() {
           last_name: acc.lastName,
           password: acc.password,
           skip_password_checks: true,
+          bypass_client_trust: true,
           public_metadata: {
             room: acc.room,
             rollNumber: acc.rollNumber,
