@@ -35,8 +35,8 @@ async function requireAdmin(req: Request, res: Response): Promise<boolean> {
         headers: { Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}` }
       });
       if (uRes.ok) {
-        const u = await uRes.json();
-        if (u.username === "admin" || (u.public_metadata as any)?.role === "admin") {
+        const u = (await uRes.json()) as any;
+        if (u?.username === "admin" || u?.public_metadata?.role === "admin") {
           return true;
         }
       }

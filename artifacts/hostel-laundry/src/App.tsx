@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { ClerkProvider, Show, useAuth, useClerk, useSignIn, useSignUp, useUser } from '@clerk/react';
+import { ClerkProvider, Show, useAuth, useClerk, useUser } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { QRCodeSVG } from 'qrcode.react';
@@ -526,7 +526,7 @@ function StudentRoute({ page }: { page: ReactNode }) {
 
 function AdminLoginPage() {
   const [, setLocation] = useLocation();
-  const { signIn, setActive: setSignInActive, isLoaded: signInLoaded } = useSignIn();
+  const clerk = useClerk();
   const [adminUser, setAdminUser] = useState('admin');
   const [adminPass, setAdminPass] = useState('Adm!nW@sh2026#X9');
   const [showPass, setShowPass] = useState(false);
@@ -535,28 +535,20 @@ function AdminLoginPage() {
 
   async function handleAdminLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!signInLoaded || !signIn) return;
+    if (!clerk.loaded) return;
     setError('');
     setLoading(true);
 
     try {
       const cleanUser = adminUser.trim().toLowerCase();
-      let res;
-      try {
-        res = await signIn.create({
-          identifier: cleanUser,
-          password: adminPass,
-        });
-      } catch {
-        const attempt = await signIn.create({ identifier: cleanUser });
-        res = await attempt.attemptFirstFactor({
-          strategy: 'password',
-          password: adminPass,
-        });
-      }
+      const attempt = await clerk.client.signIn.create({ identifier: cleanUser });
+      const res = await attempt.attemptFirstFactor({
+        strategy: 'password',
+        password: adminPass,
+      });
 
       if (res.status === 'complete') {
-        await setSignInActive!({ session: res.createdSessionId });
+        await clerk.setActive({ session: res.createdSessionId });
         setLocation('/admin');
       } else {
         setError('Sign in could not be completed. Please check your admin credentials.');
@@ -690,7 +682,6 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [, setLocation] = useLocation();
   const clerk = useClerk();
-  const { signIn, setActive: setSignInActive, isLoaded: signInLoaded } = useSignIn();
 
   // Login form state
   const [loginRoll, setLoginRoll] = useState('');
@@ -716,30 +707,20 @@ function CustomAuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 're
   // Handle Login with Roll Number or Username + Password
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!signInLoaded || !signIn) return;
+    if (!clerk.loaded) return;
     setLoginError('');
     setLoginLoading(true);
 
     try {
       const cleanRoll = loginRoll.trim().toLowerCase();
-
-      // Attempt sign in with password
-      let res;
-      try {
-        res = await signIn.create({
-          identifier: cleanRoll,
-          password: loginPass,
-        });
-      } catch {
-        const attempt = await signIn.create({ identifier: cleanRoll });
-        res = await attempt.attemptFirstFactor({
-          strategy: 'password',
-          password: loginPass,
-        });
-      }
+      const attempt = await clerk.client.signIn.create({ identifier: cleanRoll });
+      const res = await attempt.attemptFirstFactor({
+        strategy: 'password',
+        password: loginPass,
+      });
 
       if (res.status === 'complete') {
-        await setSignInActive!({ session: res.createdSessionId });
+        await clerk.setActive({ session: res.createdSessionId });
         if (cleanRoll === 'admin') {
           setLocation('/admin');
         } else {
